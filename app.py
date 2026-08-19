@@ -121,11 +121,39 @@ if api_key:
                 st.success(f"✅ Berhasil mengekstrak total {len(master_df)} baris data dari {len(uploaded_files)} file!")
                 
     if 'master_df' in st.session_state:
-        st.markdown("### ✏️ Editor Tabel Data")
-        st.write("Silakan centang kotak di sebelah kiri tabel lalu pencet **'Delete'** (logo tempat sampah di pojok kanan atas tabel) untuk **MENGHAPUS** orang tua atau data yang tidak Anda inginkan. Anda juga bisa klik dua kali pada teks jika ingin membetulkan tulisan (typo).")
+        master_df = st.session_state['master_df']
         
-        # Data Editor interaktif!
-        edited_df = st.data_editor(st.session_state['master_df'], num_rows="dynamic", use_container_width=True)
+        st.markdown("### ✏️ Pilih & Edit Data")
+
+        # --- FITUR PILIH BARIS ---
+        st.write("**Langkah 1: Pilih baris/nama yang ingin dimasukkan ke CSV:**")
+        
+        # Buat kolom pilihan berdasarkan Nama + Nomor
+        pilihan_list = []
+        for idx, row in master_df.iterrows():
+            nama_col = row.get('Nama', row.iloc[1] if len(row) > 1 else f"Baris {idx+1}")
+            no_col = row.get('No', idx+1)
+            pilihan_list.append(f"{no_col}. {nama_col}")
+        
+        selected_labels = st.multiselect(
+            "Pilih nama yang ingin diekstrak (bisa pilih lebih dari satu):",
+            options=pilihan_list,
+            default=pilihan_list,  # Default: semua terpilih
+            help="Hapus centang/klik 'x' pada nama yang TIDAK ingin Anda masukkan ke dalam file CSV"
+        )
+        
+        # Ambil index baris yang dipilih
+        selected_indices = [pilihan_list.index(label) for label in selected_labels]
+        filtered_df = master_df.iloc[selected_indices].copy()
+        filtered_df['No'] = range(1, len(filtered_df) + 1)
+        
+        st.write(f"**{len(filtered_df)} dari {len(master_df)} data terpilih.**")
+        
+        st.markdown("---")
+        st.write("**Langkah 2: Edit tabel jika ada typo (klik 2x pada sel untuk mengedit):**")
+        
+        # Data Editor interaktif hanya untuk baris terpilih
+        edited_df = st.data_editor(filtered_df, num_rows="dynamic", use_container_width=True)
         
         st.markdown("---")
         
