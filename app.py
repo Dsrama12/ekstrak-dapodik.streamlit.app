@@ -3,170 +3,248 @@ import google.generativeai as genai
 import pandas as pd
 import io
 
-st.set_page_config(page_title="Ekstrak KK Massal", page_icon="📄", layout="wide")
+st.set_page_config(page_title="Ekstrak KK Dapodik", page_icon="📄", layout="wide")
 
-st.title("📄 Web Ekstraksi Kartu Keluarga (Massal & Lengkap)")
-st.write("Versi terbaru ini mendukung **Multiple Upload (bisa upload 100+ Foto sekaligus)**, pemisahan kolom data yang lebih detail, dan fitur **Hapus Baris** untuk membuang nama orang tua yang tidak ingin dimasukkan.")
+# ─── CSS Ringan ────────────────────────────────────────────────
+st.markdown("""
+<style>
+.block-container { padding-top: 1.5rem; }
+.stButton>button { background:#1976D2; color:white; border-radius:6px; width:100%; }
+.stDownloadButton>button { background:#2e7d32; color:white; border-radius:6px; width:100%; }
+</style>
+""", unsafe_allow_html=True)
 
-api_key = ""
-if "GEMINI_API_KEY" in st.secrets:
-    api_key = st.secrets["GEMINI_API_KEY"]
-else:
+st.title("📄 Ekstraksi Kartu Keluarga → Dapodik")
+
+# ─── API KEY (dari Secrets atau input manual) ──────────────────
+api_key = st.secrets.get("GEMINI_API_KEY", "") if hasattr(st, "secrets") else ""
+if not api_key:
     api_key = st.text_input("Masukkan Google Gemini API Key:", type="password")
 
-if api_key:
-    genai.configure(api_key=api_key)
-    
-    st.markdown("---")
-    # Multiple files uploader!
-    uploaded_files = st.file_uploader("Upload Foto Kartu Keluarga (Bisa diselect banyak foto sekaligus!)", type=["jpg", "jpeg", "png", "pdf"], accept_multiple_files=True)
-    
-    if uploaded_files:
-        st.info(f"📁 {len(uploaded_files)} file terpilih siap diekstrak.")
-        
-        if st.button("Mulai Ekstrak Massal 🚀", use_container_width=True):
-            
-            # Placeholder untuk progres
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            all_data_frames = []
-            
-            for index, uploaded_file in enumerate(uploaded_files):
-                status_text.text(f"Sedang membaca file {index+1} dari {len(uploaded_files)}: {uploaded_file.name}")
-                
-                try:
-                    image_bytes = uploaded_file.getvalue()
-                    
-                    prompt = """
-                    Kamu adalah sistem ekstraksi data presisi tinggi. Baca gambar Kartu Keluarga ini.
-                    Ambil SEMUA nama anggota keluarga.
-                    
-                    SAYA MINTA FORMAT DATA WAJIB CSV MURNI DENGAN PEMISAH TITIK KOMA (;).
-                    
-                    Baris pertama wajib persis seperti ini:
-                    No;Nama;NIK;Jenis Kelamin;Tempat Lahir;Tanggal Lahir;Nama Ayah;Nama Ibu;Alamat Lengkap;No KK;Paket / Kelas
-                    
-                    Instruksi Kolom:
-                    - No: Urut 1, 2, dst
-                    - Nama: Nama anggota keluarga
-                    - NIK: Gunakan format ="1234" agar terbaca text di Excel
-                    - Jenis Kelamin: Laki-laki / Perempuan
-                    - Tempat Lahir: Nama kotanya saja (Pisahkan dari tanggal)
-                    - Tanggal Lahir: Format YYYY-MM-DD atau DD-MM-YYYY
-                    - Nama Ayah: Nama ayah
-                    - Nama Ibu: Nama ibu kandung
-                    - Alamat Lengkap: Ambil alamat rumah dari KOP ATAS Kartu Keluarga (misal Jl. Mawar No 10 RT 1 RW 2, Desa, Kec, dll). ALAMAT INI HARUS SAMA UNTUK SEMUA BARIS dalam 1 KK.
-                    - No KK: Ambil Nomor Kartu Keluarga dari Kop atas. (Gunakan format ="1234"). INI HARUS SAMA UNTUK SEMUA BARIS.
-                    - Paket / Kelas: Kosongkan
-                    
-                    Pastikan tabel bersih tanpa teks penjelasan tambahan.
-                    """
-                    
-                    models_to_try = [
-                        'gemini-3.7-flash', 
-                        'gemini-3.6-flash',
-                        'gemini-3.5-flash',
-                        'gemini-3.1-pro-preview',
-                        'gemini-2.5-flash'
-                    ]
-                    
-                    response = None
-                    last_error = None
-                    
-                    image_parts = [{"mime_type": uploaded_file.type, "data": image_bytes}]
-                    
-                    for model_name in models_to_try:
-                        try:
-                            model = genai.GenerativeModel(model_name)
-                            response = model.generate_content([prompt, image_parts[0]])
-                            break 
-                        except Exception as e:
-                            last_error = e
-                            continue
-                            
-                    if response is None:
-                        raise Exception(f"API Key error: {str(last_error)}")
-                    
-                    csv_data = response.text.strip()
-                    if csv_data.startswith("```"):
-                        csv_data = csv_data.split("\n", 1)[1]
-                        if csv_data.endswith("```"):
-                            csv_data = csv_data.rsplit("\n", 1)[0]
-                            
-                    # Konversi CSV string ke DataFrame pandas agar bisa dimanipulasi
-                    df = pd.read_csv(io.StringIO(csv_data), sep=';', dtype=str)
-                    
-                    # Bersihkan spasi kosong
-                    df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
-                    all_data_frames.append(df)
-                    
-                except Exception as e:
-                    st.error(f"Gagal memproses {uploaded_file.name}: {str(e)}")
-                
-                # Update progress
-                progress_bar.progress((index + 1) / len(uploaded_files))
-            
-            status_text.text("Ekstraksi selesai! Memproses tabel...")
-            
-            # Gabungkan semua data dari berbagai foto KK
-            if all_data_frames:
-                master_df = pd.concat(all_data_frames, ignore_index=True)
-                
-                # Update Nomor urut agar berkesinambungan 1..100
-                master_df['No'] = range(1, len(master_df) + 1)
-                
-                # Simpan ke state session agar tidak hilang saat ngedit
-                st.session_state['master_df'] = master_df
-                st.success(f"✅ Berhasil mengekstrak total {len(master_df)} baris data dari {len(uploaded_files)} file!")
-                
-    if 'master_df' in st.session_state:
-        master_df = st.session_state['master_df']
-        
-        st.markdown("### ✏️ Pilih & Edit Data")
+if not api_key:
+    st.info("💡 Silakan masukkan API Key untuk mengaktifkan aplikasi.")
+    st.stop()
 
-        # --- FITUR PILIH BARIS ---
-        st.write("**Langkah 1: Pilih baris/nama yang ingin dimasukkan ke CSV:**")
-        
-        # Buat kolom pilihan berdasarkan Nama + Nomor
-        pilihan_list = []
-        for idx, row in master_df.iterrows():
-            nama_col = row.get('Nama', row.iloc[1] if len(row) > 1 else f"Baris {idx+1}")
-            no_col = row.get('No', idx+1)
-            pilihan_list.append(f"{no_col}. {nama_col}")
-        
-        selected_labels = st.multiselect(
-            "Pilih nama yang ingin diekstrak (bisa pilih lebih dari satu):",
-            options=pilihan_list,
-            default=pilihan_list,  # Default: semua terpilih
-            help="Hapus centang/klik 'x' pada nama yang TIDAK ingin Anda masukkan ke dalam file CSV"
-        )
-        
-        # Ambil index baris yang dipilih
-        selected_indices = [pilihan_list.index(label) for label in selected_labels]
-        filtered_df = master_df.iloc[selected_indices].copy()
-        filtered_df['No'] = range(1, len(filtered_df) + 1)
-        
-        st.write(f"**{len(filtered_df)} dari {len(master_df)} data terpilih.**")
-        
-        st.markdown("---")
-        st.write("**Langkah 2: Edit tabel jika ada typo (klik 2x pada sel untuk mengedit):**")
-        
-        # Data Editor interaktif hanya untuk baris terpilih
-        edited_df = st.data_editor(filtered_df, num_rows="dynamic", use_container_width=True)
-        
-        st.markdown("---")
-        
-        # Konversi kembali dataframe yang sudah diedit ke CSV semicolon
-        csv_export = edited_df.to_csv(index=False, sep=';')
-        
-        st.download_button(
-            label="⬇️ Download File CSV Final (Siap Masuk Add-on Dapodik!)",
-            data=csv_export,
-            file_name="Data_Siswa_Ekstrak_Massal.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
+genai.configure(api_key=api_key)
 
-else:
-    st.info("💡 Silakan masukkan API Key di setting atau di kotak di atas.")
+# ─── DAFTAR MODEL (terbaru dulu) ──────────────────────────────
+MODELS = ['gemini-3.7-flash','gemini-3.6-flash','gemini-3.5-flash',
+          'gemini-3.1-pro-preview','gemini-2.5-flash']
+
+PROMPT = """
+Kamu adalah sistem ekstraksi data presisi tinggi. Baca gambar Kartu Keluarga ini.
+Ambil SEMUA nama anggota keluarga.
+
+KELUARKAN DATA SEBAGAI CSV MURNI TANPA TEKS LAIN. Pemisah: titik koma (;).
+
+Baris pertama header WAJIB persis:
+No;Nama;NIK;Jenis Kelamin;Tempat Lahir;Tanggal Lahir;Nama Ayah;Nama Ibu;Alamat Lengkap;No KK;Paket / Kelas
+
+Aturan:
+- No: nomor urut mulai 1
+- NIK: format ="angka" agar aman di Excel
+- No KK: format ="angka" agar aman di Excel  
+- Jenis Kelamin: Laki-laki / Perempuan
+- Tempat Lahir: nama kota saja
+- Tanggal Lahir: DD-MM-YYYY
+- Alamat Lengkap: ambil dari kop KK, SAMA untuk semua baris dalam 1 KK
+- No KK: ambil dari kop KK, SAMA untuk semua baris
+- Paket / Kelas: kosongkan
+"""
+
+# ─── TAB UTAMA ────────────────────────────────────────────────
+tab1, tab2 = st.tabs(["📤 Ekstrak Foto KK", "📁 Gabung ke Excel Existing"])
+
+# ════════════════════════════════════════════════════════════════
+# TAB 1 — Ekstrak foto KK baru
+# ════════════════════════════════════════════════════════════════
+with tab1:
+    uploaded_files = st.file_uploader(
+        "Upload Foto KK (JPG/PNG, bisa pilih banyak sekaligus)",
+        type=["jpg", "jpeg", "png"],
+        accept_multiple_files=True,
+        key="uploader_new"
+    )
+
+    if uploaded_files and st.button("🚀 Mulai Ekstrak", key="btn_ekstrak"):
+        progress = st.progress(0)
+        status  = st.empty()
+        all_dfs = []
+
+        for i, f in enumerate(uploaded_files):
+            status.info(f"⏳ Membaca file {i+1}/{len(uploaded_files)}: **{f.name}**")
+            try:
+                img_bytes = f.getvalue()
+                img_part  = {"mime_type": f.type, "data": img_bytes}
+
+                resp = None
+                err  = None
+                for m in MODELS:
+                    try:
+                        resp = genai.GenerativeModel(m).generate_content([PROMPT, img_part])
+                        break
+                    except Exception as e:
+                        err = e
+
+                if resp is None:
+                    st.error(f"❌ Gagal: {f.name} — {err}")
+                    continue
+
+                raw = resp.text.strip()
+                if raw.startswith("```"):
+                    raw = raw.split("\n", 1)[1]
+                    if raw.endswith("```"):
+                        raw = raw.rsplit("\n", 1)[0]
+
+                df = pd.read_csv(io.StringIO(raw), sep=";", dtype=str)
+                df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
+                all_dfs.append(df)
+
+            except Exception as e:
+                st.error(f"❌ Error saat memproses {f.name}: {e}")
+
+            progress.progress((i + 1) / len(uploaded_files))
+
+        status.success(f"✅ Selesai! {len(all_dfs)} file berhasil diekstrak.")
+
+        if all_dfs:
+            master = pd.concat(all_dfs, ignore_index=True)
+            master["No"] = range(1, len(master) + 1)
+            st.session_state["master_df"] = master
+
+    # ── Tampilkan hasil & pilih baris ──────────────────────────
+    if "master_df" in st.session_state:
+        master = st.session_state["master_df"]
+
+        st.markdown("---")
+        st.markdown("### ✅ Langkah 1 — Pilih Baris yang Ingin Disimpan")
+        st.caption("Klik tanda ✕ pada nama yang TIDAK ingin diambil.")
+
+        label_list = [f"{r.get('No', i+1)}. {r.get('Nama','?')}" for i, (_, r) in enumerate(master.iterrows())]
+        selected   = st.multiselect("Pilih nama:", label_list, default=label_list)
+
+        if selected:
+            idxs     = [label_list.index(l) for l in selected]
+            filtered = master.iloc[idxs].copy()
+            filtered["No"] = range(1, len(filtered) + 1)
+        else:
+            filtered = master.copy()
+
+        st.markdown(f"**{len(filtered)} dari {len(master)} baris dipilih.**")
+
+        st.markdown("### ✅ Langkah 2 — Koreksi Jika Ada Typo (klik 2× pada sel)")
+        edited = st.data_editor(filtered, num_rows="dynamic", use_container_width=True)
+
+        st.markdown("---")
+        st.markdown("### ✅ Langkah 3 — Download")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            csv_out = edited.to_csv(index=False, sep=";")
+            st.download_button("⬇️ Download CSV (untuk Add-on)", csv_out,
+                               "Data_Siswa.csv", "text/csv")
+        with col2:
+            buf = io.BytesIO()
+            edited.to_excel(buf, index=False, engine="openpyxl")
+            st.download_button("⬇️ Download Excel (.xlsx)", buf.getvalue(),
+                               "Data_Siswa.xlsx",
+                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+# ════════════════════════════════════════════════════════════════
+# TAB 2 — Gabungkan ke file Excel yang sudah ada (Append)
+# ════════════════════════════════════════════════════════════════
+with tab2:
+    st.markdown("### 📂 Upload Excel yang Sudah Ada")
+    st.caption("Data baru hasil ekstrak akan **ditambahkan di bawah** data lama secara otomatis.")
+
+    existing_file = st.file_uploader("Upload file Excel (.xlsx) yang ingin ditambahi data:",
+                                     type=["xlsx"], key="uploader_existing")
+
+    st.markdown("### 📤 Upload Foto KK Baru untuk Ditambahkan")
+    new_kk_files = st.file_uploader(
+        "Upload Foto KK baru (JPG/PNG):",
+        type=["jpg","jpeg","png"],
+        accept_multiple_files=True,
+        key="uploader_append"
+    )
+
+    if existing_file and new_kk_files and st.button("🔗 Gabungkan Data", key="btn_append"):
+        # Baca Excel lama
+        df_lama = pd.read_excel(existing_file, dtype=str)
+        st.write(f"📊 Data lama: **{len(df_lama)} baris**")
+
+        # Ekstrak KK baru
+        progress2 = st.progress(0)
+        status2   = st.empty()
+        new_dfs   = []
+
+        for i, f in enumerate(new_kk_files):
+            status2.info(f"⏳ Membaca: {f.name}")
+            try:
+                img_bytes = f.getvalue()
+                img_part  = {"mime_type": f.type, "data": img_bytes}
+
+                resp = None
+                err  = None
+                for m in MODELS:
+                    try:
+                        resp = genai.GenerativeModel(m).generate_content([PROMPT, img_part])
+                        break
+                    except Exception as e:
+                        err = e
+
+                if resp is None:
+                    st.error(f"❌ {f.name} — {err}")
+                    continue
+
+                raw = resp.text.strip()
+                if raw.startswith("```"):
+                    raw = raw.split("\n", 1)[1]
+                    if raw.endswith("```"):
+                        raw = raw.rsplit("\n", 1)[0]
+
+                df = pd.read_csv(io.StringIO(raw), sep=";", dtype=str)
+                df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
+                new_dfs.append(df)
+
+            except Exception as e:
+                st.error(f"❌ Error: {e}")
+
+            progress2.progress((i + 1) / len(new_kk_files))
+
+        status2.success("✅ Ekstraksi selesai! Menggabungkan data...")
+
+        if new_dfs:
+            df_baru  = pd.concat(new_dfs, ignore_index=True)
+
+            # Gabungkan lama + baru
+            df_gabung = pd.concat([df_lama, df_baru], ignore_index=True)
+            df_gabung["No"] = range(1, len(df_gabung) + 1)
+
+            st.success(f"✅ Total data gabungan: **{len(df_gabung)} baris** ({len(df_lama)} lama + {len(df_baru)} baru)")
+
+            st.markdown("### Preview & Pilih Baris")
+            label_list2 = [f"{r.get('No',i+1)}. {r.get('Nama','?')}" for i, (_, r) in enumerate(df_gabung.iterrows())]
+            selected2   = st.multiselect("Pilih baris:", label_list2, default=label_list2, key="ms2")
+
+            if selected2:
+                idxs2     = [label_list2.index(l) for l in selected2]
+                filtered2 = df_gabung.iloc[idxs2].copy()
+                filtered2["No"] = range(1, len(filtered2) + 1)
+            else:
+                filtered2 = df_gabung.copy()
+
+            edited2 = st.data_editor(filtered2, num_rows="dynamic", use_container_width=True)
+
+            col3, col4 = st.columns(2)
+            with col3:
+                csv2 = edited2.to_csv(index=False, sep=";")
+                st.download_button("⬇️ Download CSV Gabungan", csv2,
+                                   "Data_Siswa_Gabungan.csv", "text/csv", key="dl_csv2")
+            with col4:
+                buf2 = io.BytesIO()
+                edited2.to_excel(buf2, index=False, engine="openpyxl")
+                st.download_button("⬇️ Download Excel Gabungan (.xlsx)", buf2.getvalue(),
+                                   "Data_Siswa_Gabungan.xlsx",
+                                   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                   key="dl_xlsx2")
