@@ -1,13 +1,11 @@
 import streamlit as st
 import google.generativeai as genai
 
-# Konfigurasi Halaman Web
 st.set_page_config(page_title="Ekstrak KK ke CSV", page_icon="📄", layout="centered")
 
 st.title("📄 Web Ekstraksi Kartu Keluarga (AI)")
 st.write("Aplikasi web ini menggunakan kecerdasan buatan untuk membaca foto Kartu Keluarga dan secara otomatis menyusunnya menjadi file CSV yang siap dimasukkan ke Add-on Dapodik.")
 
-# Meminta API Key
 api_key = st.text_input("Masukkan Google Gemini API Key:", type="password", help="Dapatkan API Key gratis di aistudio.google.com")
 
 if api_key:
@@ -17,7 +15,6 @@ if api_key:
     uploaded_file = st.file_uploader("Upload Foto Kartu Keluarga (JPG/PNG)", type=["jpg", "jpeg", "png"])
     
     if uploaded_file is not None:
-        # Gunakan getvalue() untuk menghindari error pembacaan file stream berulang di Streamlit versi baru
         image_bytes = uploaded_file.getvalue()
         
         st.image(image_bytes, caption="Preview Foto KK", use_container_width=True)
@@ -25,8 +22,6 @@ if api_key:
         if st.button("Mulai Ekstrak Data 🚀", use_container_width=True):
             with st.spinner('AI sedang membaca baris tabel Kartu Keluarga... Mohon tunggu.'):
                 try:
-                    model = genai.GenerativeModel('gemini-1.5-flash')
-                    
                     prompt = """
                     Kamu adalah asisten ekstraksi data. Saya memberikan gambar Kartu Keluarga (KK).
                     Tugasmu adalah membaca tabel KK tersebut dan mengambil data anggota keluarga.
@@ -54,7 +49,22 @@ if api_key:
                         }
                     ]
                     
-                    response = model.generate_content([prompt, image_parts[0]])
+                    # Mencoba beberapa variasi nama model AI untuk menghindari error 404
+                    models_to_try = ['gemini-1.5-flash-latest', 'gemini-1.5-flash', 'gemini-1.5-pro-latest', 'gemini-1.5-pro']
+                    response = None
+                    last_error = None
+                    
+                    for model_name in models_to_try:
+                        try:
+                            model = genai.GenerativeModel(model_name)
+                            response = model.generate_content([prompt, image_parts[0]])
+                            break # Berhasil! Keluar dari loop
+                        except Exception as e:
+                            last_error = e
+                            continue
+                            
+                    if response is None:
+                        raise Exception(f"Gagal mengakses model AI. Pesan terakhir: {str(last_error)}")
                     
                     csv_data = response.text.strip()
                     
