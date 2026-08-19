@@ -7,26 +7,26 @@ st.set_page_config(page_title="Ekstrak KK ke CSV", page_icon="📄", layout="cen
 st.title("📄 Web Ekstraksi Kartu Keluarga (AI)")
 st.write("Aplikasi web ini menggunakan kecerdasan buatan untuk membaca foto Kartu Keluarga dan secara otomatis menyusunnya menjadi file CSV yang siap dimasukkan ke Add-on Dapodik.")
 
-# Meminta API Key (Gratis didapatkan dari Google AI Studio)
+# Meminta API Key
 api_key = st.text_input("Masukkan Google Gemini API Key:", type="password", help="Dapatkan API Key gratis di aistudio.google.com")
 
 if api_key:
-    # Konfigurasi AI dengan kunci API
     genai.configure(api_key=api_key)
     
     st.markdown("---")
     uploaded_file = st.file_uploader("Upload Foto Kartu Keluarga (JPG/PNG)", type=["jpg", "jpeg", "png"])
     
     if uploaded_file is not None:
-        st.image(uploaded_file, caption="Preview Foto KK", use_column_width=True)
+        # Gunakan getvalue() untuk menghindari error pembacaan file stream berulang di Streamlit versi baru
+        image_bytes = uploaded_file.getvalue()
+        
+        st.image(image_bytes, caption="Preview Foto KK", use_container_width=True)
         
         if st.button("Mulai Ekstrak Data 🚀", use_container_width=True):
             with st.spinner('AI sedang membaca baris tabel Kartu Keluarga... Mohon tunggu.'):
                 try:
-                    # Memanggil Model Vision
                     model = genai.GenerativeModel('gemini-1.5-flash')
                     
-                    # Perintah super spesifik untuk AI
                     prompt = """
                     Kamu adalah asisten ekstraksi data. Saya memberikan gambar Kartu Keluarga (KK).
                     Tugasmu adalah membaca tabel KK tersebut dan mengambil data anggota keluarga.
@@ -50,16 +50,14 @@ if api_key:
                     image_parts = [
                         {
                             "mime_type": uploaded_file.type,
-                            "data": uploaded_file.getvalue()
+                            "data": image_bytes
                         }
                     ]
                     
-                    # Kirim ke AI
                     response = model.generate_content([prompt, image_parts[0]])
                     
                     csv_data = response.text.strip()
                     
-                    # Bersihkan jika AI menambahkan blok markdown (```csv)
                     if csv_data.startswith("```"):
                         csv_data = csv_data.split("\n", 1)[1]
                         if csv_data.endswith("```"):
