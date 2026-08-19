@@ -6,7 +6,12 @@ st.set_page_config(page_title="Ekstrak KK ke CSV", page_icon="📄", layout="cen
 st.title("📄 Web Ekstraksi Kartu Keluarga (AI)")
 st.write("Aplikasi web ini menggunakan kecerdasan buatan untuk membaca foto Kartu Keluarga dan secara otomatis menyusunnya menjadi file CSV yang siap dimasukkan ke Add-on Dapodik.")
 
-api_key = st.text_input("Masukkan Google Gemini API Key:", type="password", help="Dapatkan API Key gratis di aistudio.google.com")
+# Cek apakah API Key sudah ditanam di Streamlit Secrets
+api_key = ""
+if "GEMINI_API_KEY" in st.secrets:
+    api_key = st.secrets["GEMINI_API_KEY"]
+else:
+    api_key = st.text_input("Masukkan Google Gemini API Key:", type="password", help="Dapatkan API Key gratis di aistudio.google.com")
 
 if api_key:
     genai.configure(api_key=api_key)
