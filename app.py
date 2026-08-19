@@ -98,7 +98,7 @@ if api_key:
                     df = pd.read_csv(io.StringIO(csv_data), sep=';', dtype=str)
                     
                     # Bersihkan spasi kosong
-                    df = df.applymap(lambda x: x.strip() if isinstance(x, str) else x)
+                    df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
                     all_data_frames.append(df)
                     
                 except Exception as e:
