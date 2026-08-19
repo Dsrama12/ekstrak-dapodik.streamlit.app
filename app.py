@@ -49,15 +49,13 @@ if api_key:
                         }
                     ]
                     
-                    # Mencoba SEMUA versi model Vision yang ada
+                    # Menggunakan model Gemini generasi terbaru tahun 2026
                     models_to_try = [
-                        'gemini-1.5-flash', 
-                        'gemini-1.5-flash-latest', 
-                        'gemini-1.5-pro', 
-                        'gemini-1.5-pro-latest', 
-                        'gemini-pro-vision',
-                        'models/gemini-1.5-flash',
-                        'models/gemini-pro-vision'
+                        'gemini-3.7-flash', 
+                        'gemini-3.6-flash',
+                        'gemini-3.5-flash',
+                        'gemini-3.1-pro-preview',
+                        'gemini-2.5-flash'
                     ]
                     
                     response = None
@@ -73,9 +71,7 @@ if api_key:
                             continue
                             
                     if response is None:
-                        # Jika tetap gagal, kita cari tahu model apa yang sebenarnya diizinkan oleh API Key ini
-                        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                        raise Exception(f"API Key Anda tidak memiliki akses ke model Vision. Model yang tersedia untuk API Key ini: {available_models}. Pesan asli: {str(last_error)}")
+                        raise Exception(f"Gagal mengakses model AI. Pesan asli: {str(last_error)}")
                     
                     csv_data = response.text.strip()
                     
