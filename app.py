@@ -1,60 +1,68 @@
 import streamlit as st
 import google.generativeai as genai
+import pandas as pd
+import io
 
-st.set_page_config(page_title="Ekstrak KK ke CSV", page_icon="📄", layout="centered")
+st.set_page_config(page_title="Ekstrak KK Massal", page_icon="📄", layout="wide")
 
-st.title("📄 Web Ekstraksi Kartu Keluarga (AI)")
-st.write("Aplikasi web ini menggunakan kecerdasan buatan untuk membaca foto Kartu Keluarga dan secara otomatis menyusunnya menjadi file CSV yang siap dimasukkan ke Add-on Dapodik.")
+st.title("📄 Web Ekstraksi Kartu Keluarga (Massal & Lengkap)")
+st.write("Versi terbaru ini mendukung **Multiple Upload (bisa upload 100+ Foto sekaligus)**, pemisahan kolom data yang lebih detail, dan fitur **Hapus Baris** untuk membuang nama orang tua yang tidak ingin dimasukkan.")
 
-# Cek apakah API Key sudah ditanam di Streamlit Secrets
 api_key = ""
 if "GEMINI_API_KEY" in st.secrets:
     api_key = st.secrets["GEMINI_API_KEY"]
 else:
-    api_key = st.text_input("Masukkan Google Gemini API Key:", type="password", help="Dapatkan API Key gratis di aistudio.google.com")
+    api_key = st.text_input("Masukkan Google Gemini API Key:", type="password")
 
 if api_key:
     genai.configure(api_key=api_key)
     
     st.markdown("---")
-    uploaded_file = st.file_uploader("Upload Foto Kartu Keluarga (JPG/PNG)", type=["jpg", "jpeg", "png"])
+    # Multiple files uploader!
+    uploaded_files = st.file_uploader("Upload Foto Kartu Keluarga (Bisa diselect banyak foto sekaligus!)", type=["jpg", "jpeg", "png", "pdf"], accept_multiple_files=True)
     
-    if uploaded_file is not None:
-        image_bytes = uploaded_file.getvalue()
+    if uploaded_files:
+        st.info(f"📁 {len(uploaded_files)} file terpilih siap diekstrak.")
         
-        st.image(image_bytes, caption="Preview Foto KK", use_container_width=True)
-        
-        if st.button("Mulai Ekstrak Data 🚀", use_container_width=True):
-            with st.spinner('AI sedang membaca baris tabel Kartu Keluarga... Mohon tunggu.'):
+        if st.button("Mulai Ekstrak Massal 🚀", use_container_width=True):
+            
+            # Placeholder untuk progres
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            all_data_frames = []
+            
+            for index, uploaded_file in enumerate(uploaded_files):
+                status_text.text(f"Sedang membaca file {index+1} dari {len(uploaded_files)}: {uploaded_file.name}")
+                
                 try:
+                    image_bytes = uploaded_file.getvalue()
+                    
                     prompt = """
-                    Kamu adalah asisten ekstraksi data. Saya memberikan gambar Kartu Keluarga (KK).
-                    Tugasmu adalah membaca tabel KK tersebut dan mengambil data anggota keluarga.
-                    Kembalikan data DALAM FORMAT TEXT CSV SAJA, tanpa teks basa-basi apa pun.
-                    Gunakan pemisah titik koma (;).
+                    Kamu adalah sistem ekstraksi data presisi tinggi. Baca gambar Kartu Keluarga ini.
+                    Ambil SEMUA nama anggota keluarga.
                     
-                    Format Header wajib baris pertamanya persis seperti ini:
-                    No;Nama;NIK;TTL;Paket / Kelas;Ayah/Ibu
+                    SAYA MINTA FORMAT DATA WAJIB CSV MURNI DENGAN PEMISAH TITIK KOMA (;).
                     
-                    Keterangan pengisian baris selanjutnya:
-                    - No: Nomor urut (1, 2, 3)
-                    - Nama: Nama Lengkap
-                    - NIK: ="NIK" (Tulis NIK dengan format ="1234567890123456" agar tidak rusak di Excel)
-                    - TTL: Tempat Lahir, Tanggal Lahir (Misal: JAKARTA, 12-05-2010)
-                    - Paket / Kelas: Kosongkan saja (jangan diisi apa-apa)
-                    - Ayah/Ibu: Nama Ayah / Nama Ibu (Misal: BUDI / SITI)
+                    Baris pertama wajib persis seperti ini:
+                    No;Nama;NIK;Jenis Kelamin;Tempat Lahir;Tanggal Lahir;Nama Ayah;Nama Ibu;Alamat Lengkap;No KK;Paket / Kelas
                     
-                    Pastikan membaca seluruh baris tabel dengan teliti dari atas ke bawah.
+                    Instruksi Kolom:
+                    - No: Urut 1, 2, dst
+                    - Nama: Nama anggota keluarga
+                    - NIK: Gunakan format ="1234" agar terbaca text di Excel
+                    - Jenis Kelamin: Laki-laki / Perempuan
+                    - Tempat Lahir: Nama kotanya saja (Pisahkan dari tanggal)
+                    - Tanggal Lahir: Format YYYY-MM-DD atau DD-MM-YYYY
+                    - Nama Ayah: Nama ayah
+                    - Nama Ibu: Nama ibu kandung
+                    - Alamat Lengkap: Ambil alamat rumah dari KOP ATAS Kartu Keluarga (misal Jl. Mawar No 10 RT 1 RW 2, Desa, Kec, dll). ALAMAT INI HARUS SAMA UNTUK SEMUA BARIS dalam 1 KK.
+                    - No KK: Ambil Nomor Kartu Keluarga dari Kop atas. (Gunakan format ="1234"). INI HARUS SAMA UNTUK SEMUA BARIS.
+                    - Paket / Kelas: Kosongkan
+                    
+                    Pastikan tabel bersih tanpa teks penjelasan tambahan.
                     """
                     
-                    image_parts = [
-                        {
-                            "mime_type": uploaded_file.type,
-                            "data": image_bytes
-                        }
-                    ]
-                    
-                    # Menggunakan model Gemini generasi terbaru tahun 2026
                     models_to_try = [
                         'gemini-3.7-flash', 
                         'gemini-3.6-flash',
@@ -66,37 +74,71 @@ if api_key:
                     response = None
                     last_error = None
                     
+                    image_parts = [{"mime_type": uploaded_file.type, "data": image_bytes}]
+                    
                     for model_name in models_to_try:
                         try:
                             model = genai.GenerativeModel(model_name)
                             response = model.generate_content([prompt, image_parts[0]])
-                            break # Berhasil!
+                            break 
                         except Exception as e:
                             last_error = e
                             continue
                             
                     if response is None:
-                        raise Exception(f"Gagal mengakses model AI. Pesan asli: {str(last_error)}")
+                        raise Exception(f"API Key error: {str(last_error)}")
                     
                     csv_data = response.text.strip()
-                    
                     if csv_data.startswith("```"):
                         csv_data = csv_data.split("\n", 1)[1]
                         if csv_data.endswith("```"):
                             csv_data = csv_data.rsplit("\n", 1)[0]
+                            
+                    # Konversi CSV string ke DataFrame pandas agar bisa dimanipulasi
+                    df = pd.read_csv(io.StringIO(csv_data), sep=';', dtype=str)
                     
-                    st.success("✅ Berhasil diekstrak!")
-                    st.text_area("Preview Hasil (Bisa diedit jika ada typo):", csv_data, height=200)
-                    
-                    st.download_button(
-                        label="⬇️ Download File CSV",
-                        data=csv_data,
-                        file_name="Data_Siswa_Ekstrak.csv",
-                        mime="text/csv",
-                        use_container_width=True
-                    )
+                    # Bersihkan spasi kosong
+                    df = df.applymap(lambda x: x.strip() if isinstance(x, str) else x)
+                    all_data_frames.append(df)
                     
                 except Exception as e:
-                    st.error(f"Terjadi kesalahan: {str(e)}")
+                    st.error(f"Gagal memproses {uploaded_file.name}: {str(e)}")
+                
+                # Update progress
+                progress_bar.progress((index + 1) / len(uploaded_files))
+            
+            status_text.text("Ekstraksi selesai! Memproses tabel...")
+            
+            # Gabungkan semua data dari berbagai foto KK
+            if all_data_frames:
+                master_df = pd.concat(all_data_frames, ignore_index=True)
+                
+                # Update Nomor urut agar berkesinambungan 1..100
+                master_df['No'] = range(1, len(master_df) + 1)
+                
+                # Simpan ke state session agar tidak hilang saat ngedit
+                st.session_state['master_df'] = master_df
+                st.success(f"✅ Berhasil mengekstrak total {len(master_df)} baris data dari {len(uploaded_files)} file!")
+                
+    if 'master_df' in st.session_state:
+        st.markdown("### ✏️ Editor Tabel Data")
+        st.write("Silakan centang kotak di sebelah kiri tabel lalu pencet **'Delete'** (logo tempat sampah di pojok kanan atas tabel) untuk **MENGHAPUS** orang tua atau data yang tidak Anda inginkan. Anda juga bisa klik dua kali pada teks jika ingin membetulkan tulisan (typo).")
+        
+        # Data Editor interaktif!
+        edited_df = st.data_editor(st.session_state['master_df'], num_rows="dynamic", use_container_width=True)
+        
+        st.markdown("---")
+        
+        # Konversi kembali dataframe yang sudah diedit ke CSV semicolon
+        csv_export = edited_df.to_csv(index=False, sep=';')
+        
+        st.download_button(
+            label="⬇️ Download File CSV Final (Siap Masuk Add-on Dapodik!)",
+            data=csv_export,
+            file_name="Data_Siswa_Ekstrak_Massal.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+
 else:
-    st.info("💡 Silakan masukkan API Key terlebih dahulu untuk mengaktifkan aplikasi.")
+    st.info("💡 Silakan masukkan API Key di setting atau di kotak di atas.")
