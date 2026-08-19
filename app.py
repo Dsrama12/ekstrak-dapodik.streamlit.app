@@ -49,8 +49,17 @@ if api_key:
                         }
                     ]
                     
-                    # Mencoba beberapa variasi nama model AI untuk menghindari error 404
-                    models_to_try = ['gemini-1.5-flash-latest', 'gemini-1.5-flash', 'gemini-1.5-pro-latest', 'gemini-1.5-pro']
+                    # Mencoba SEMUA versi model Vision yang ada
+                    models_to_try = [
+                        'gemini-1.5-flash', 
+                        'gemini-1.5-flash-latest', 
+                        'gemini-1.5-pro', 
+                        'gemini-1.5-pro-latest', 
+                        'gemini-pro-vision',
+                        'models/gemini-1.5-flash',
+                        'models/gemini-pro-vision'
+                    ]
+                    
                     response = None
                     last_error = None
                     
@@ -58,13 +67,15 @@ if api_key:
                         try:
                             model = genai.GenerativeModel(model_name)
                             response = model.generate_content([prompt, image_parts[0]])
-                            break # Berhasil! Keluar dari loop
+                            break # Berhasil!
                         except Exception as e:
                             last_error = e
                             continue
                             
                     if response is None:
-                        raise Exception(f"Gagal mengakses model AI. Pesan terakhir: {str(last_error)}")
+                        # Jika tetap gagal, kita cari tahu model apa yang sebenarnya diizinkan oleh API Key ini
+                        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                        raise Exception(f"API Key Anda tidak memiliki akses ke model Vision. Model yang tersedia untuk API Key ini: {available_models}. Pesan asli: {str(last_error)}")
                     
                     csv_data = response.text.strip()
                     
@@ -85,6 +96,6 @@ if api_key:
                     )
                     
                 except Exception as e:
-                    st.error(f"Terjadi kesalahan saat mengekstrak: {str(e)}")
+                    st.error(f"Terjadi kesalahan: {str(e)}")
 else:
     st.info("💡 Silakan masukkan API Key terlebih dahulu untuk mengaktifkan aplikasi.")
